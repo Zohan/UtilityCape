@@ -11,27 +11,30 @@
 // Columns were alternated between running up the cape and down the cape for wiring purposes. With this on, every other row will have the output flipped.
 #define ALTERNATE_COLUMNS 1
 #define DELAY 0
-// This determines how 'smooth' transitions between worlds will be
-#define COLORCYCLEAMOUNT 16
-
 #define SIZEX 20
 #define SIZEY 7
 #define OFFSET 10
+// This determines how 'smooth' transitions between worlds will be
+#define COLORCYCLEAMOUNT 16
 
 const int ledButton = 9;    // the number of the pushbutton pin
 const int heatingButton = 10;    // the number of the pushbutton pin
-int heaterLedState = HIGH;         // the current state of the output pin
-int buttonState;             // the current reading from the input pin
-int lastButtonState = LOW;   // the previous reading from the input pin
+const int heaterPin = 12;    // the number of the pushbutton pin
+const int heaterLedPin = 7;
+int heaterLedState = LOW;         // the current state of the output pin
+int ledButtonState;             // the current reading from the input pin
+int heaterButtonState;             // the current reading from the input pin
+int lastLedButtonState = LOW;   // the previous reading from the input pin
+int lastHeaterButtonState = LOW;   // the previous reading from the input pin
 long lastDebounceTime = 0;  // the last time the output pin was toggled
 long debounceDelay = 50;    // the debounce time; increase if the output flickers
 
 byte ledMode = 0;
 byte heaterMode = 0;
 
-
 byte world[SIZEX][SIZEY][3], oldColor, rgbOld[3], rgbNew[3];
 boolean firstCycle = true;
+boolean ledModeInterrupted = false;
 long density = 22;
  
 // Parameter 1 = number of pixels in strip
@@ -52,8 +55,8 @@ void setup() {
   // Define buttons
   pinMode(ledButton, INPUT);
   pinMode(heatingButton, INPUT);
-  
-  pinMode(7, OUTPUT);
+  pinMode(heaterPin, OUTPUT);
+  pinMode(heaterLedPin, OUTPUT);
   Serial.begin(9600);
   Serial.println("Starting Cape of Life...");
   
@@ -77,29 +80,50 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
 {
   int reading = digitalRead(ledButton);
   int reading2 = digitalRead(heatingButton);
-  if (reading != lastButtonState) {
+  if (reading != lastLedButtonState) {
     // reset the debouncing timer
     lastDebounceTime = millis();
   } 
   
+  if (reading2 != lastHeaterButtonState) {
+    lastDebounceTime = millis();
+
+  }
+  
   if ((millis() - lastDebounceTime) > debounceDelay) {
     // whatever the reading is at, it's been there for longer
     // than the debounce delay, so take it as the actual current state:
-
     // if the button state has changed:
-    if (reading != buttonState) {
-      buttonState = reading;
+    if (reading != ledButtonState) {
+      ledButtonState = reading;
 
       // only toggle the LED if the new button state is HIGH
-      if (buttonState == HIGH) {
-        heaterLedState = !heaterLedState;
+      if (ledButtonState == HIGH) {
         ledMode++;
         Serial.println("Changing LED mode!");
+        ledModeInterrupted = true;
+      }
+    }
+    if (reading2 != heaterButtonState) {
+      heaterButtonState = reading2;
+
+      if (heaterButtonState == HIGH) {
+        if(heaterLedState) {
+          heaterLedState = !heaterLedState;
+          Serial.println("Heater off!");
+          analogWrite(heaterPin, 0);
+          digitalWrite(heaterLedPin, heaterLedState);
+        } else {
+          heaterLedState = !heaterLedState;
+          Serial.println("Heater on!");
+          analogWrite(heaterPin, 120);
+          digitalWrite(heaterLedPin, heaterLedState);
+        }
       }
     }
   }
-  digitalWrite(7, heaterLedState);
-  lastButtonState = reading;
+  lastLedButtonState = reading;
+  lastHeaterButtonState = reading2;
   //ledModeSwitch();
 }
 
@@ -149,6 +173,7 @@ void ledModeSwitch() {
     ledMode = 0;
     gameOfLifeLoop();
   }
+  ledModeInterrupted = false;
 }
 
 void colorWipe(uint32_t c, uint8_t wait) {
@@ -164,11 +189,13 @@ void rainbowCycle(uint8_t wait) {
   uint16_t i, j;
 
   for(j=0; j<256*5; j++) { // 5 cycles of all colors on wheel
-    for(i=0; i< strip.numPixels(); i++) {
-      strip.setPixelColor(i, Wheel(((i * 256 / strip.numPixels()) + j) & 255));
+    if(!ledModeInterrupted) {
+      for(i=0; i< strip.numPixels(); i++) {
+        strip.setPixelColor(i, Wheel(((i * 256 / strip.numPixels()) + j) & 255));
+      }
+      strip.show();
+      delay(wait);
     }
-    strip.show();
-    delay(wait);
   }
 }
 
@@ -196,14 +223,16 @@ void gameOfLifeLoop() {
   Serial.println("Triple Loop 1 Done");
   // Display current generation
   for(i = 0; i<COLORCYCLEAMOUNT; i++) {
-    for (j = 0; j < SIZEX; j++) {
-      for (k = 0; k < SIZEY; k++) {
-        if (world[j][k][0] && !world[j][k][2]) {
-          setGridPixelColor(j, k, strip.Color((i*rgbNew[0])/COLORCYCLEAMOUNT, (i*rgbNew[1])/COLORCYCLEAMOUNT, (i*rgbNew[2])/COLORCYCLEAMOUNT));
-        } else if( world[j][k][0] && world[j][k][2]){
-          setGridPixelColor(j, k, strip.Color(rgbNew[0], rgbNew[1], rgbNew[2]));
-        } else { 
-          setGridPixelColor(j, k, strip.Color(0, 0, 0));
+    if(!ledModeInterrupted) {
+      for (j = 0; j < SIZEX; j++) {
+        for (k = 0; k < SIZEY; k++) {
+          if (world[j][k][0] && !world[j][k][2]) {
+            setGridPixelColor(j, k, strip.Color((i*rgbNew[0])/COLORCYCLEAMOUNT, (i*rgbNew[1])/COLORCYCLEAMOUNT, (i*rgbNew[2])/COLORCYCLEAMOUNT));
+          } else if( world[j][k][0] && world[j][k][2]){
+            setGridPixelColor(j, k, strip.Color(rgbNew[0], rgbNew[1], rgbNew[2]));
+          } else { 
+            setGridPixelColor(j, k, strip.Color(0, 0, 0));
+          }
         }
       }
     }
