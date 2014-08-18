@@ -19,7 +19,7 @@
 
 const int ledButton = 9;    // the number of the pushbutton pin
 const int heatingButton = 10;    // the number of the pushbutton pin
-const int heaterPin = 12;    // the number of the pushbutton pin
+const int heaterPin = 6;    // the number of the pushbutton pin
 const int heaterLedPin = 7;
 int heaterLedState = LOW;         // the current state of the output pin
 int ledButtonState;             // the current reading from the input pin
@@ -31,6 +31,8 @@ long debounceDelay = 50;    // the debounce time; increase if the output flicker
 
 byte ledMode = 0;
 byte heaterMode = 0;
+byte collarLed = 0;
+byte collarColor = 0;
 
 byte world[SIZEX][SIZEY][3], oldColor, rgbOld[3], rgbNew[3];
 boolean firstCycle = true;
@@ -44,13 +46,14 @@ long density = 22;
 //   NEO_GRB     Pixels are wired for GRB bitstream
 //   NEO_KHZ400  400 KHz bitstream (e.g. FLORA pixels)
 //   NEO_KHZ800  800 KHz bitstream (e.g. High Density LED strip)
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(150, 6, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(150, 12, NEO_GRB + NEO_KHZ800);
  
 void setup() {
   strip.begin();
   strip.show(); // Initialize all pixels to 'off'
   randomSeed(analogRead(0));
   randomizeWorld();
+  collarColor = random(255);
   
   // Define buttons
   pinMode(ledButton, INPUT);
@@ -63,9 +66,19 @@ void setup() {
   // enable timer overflow interrupt for both Timer0 and Timer1
   // initialize timer1 
   noInterrupts();           // disable all interrupts
+  TCCR3A = 0;
+  TCCR3B = 0;
   TCCR1A = 0;
   TCCR1B = 0;
+  TCNT3  = 0;
   TCNT1  = 0;
+  
+  OCR3A = 31250;            // compare match register 16MHz/256/2Hz
+  TCCR3B |= (1 << WGM12);   // CTC mode
+  TCCR3B |= (0 << CS30);    // 256 prescaler
+  TCCR3B |= (0 << CS31);    // 256 prescaler
+  TCCR3B |= (1 << CS32);    // 256 prescaler 
+  TIMSK3 |= (1 << OCIE3A);  // enable timer compare interrupt
 
   OCR1A = 1563;            // compare match register 16MHz/256/2Hz
   TCCR1B |= (1 << WGM12);   // CTC mode
@@ -106,25 +119,54 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
     }
     if (reading2 != heaterButtonState) {
       heaterButtonState = reading2;
-
+      
       if (heaterButtonState == HIGH) {
-        if(heaterLedState) {
-          heaterLedState = !heaterLedState;
+        heaterMode++;
+        switch(heaterMode) {
+          case 0:
           Serial.println("Heater off!");
-          analogWrite(heaterPin, 0);
-          digitalWrite(heaterLedPin, heaterLedState);
-        } else {
-          heaterLedState = !heaterLedState;
-          Serial.println("Heater on!");
-          analogWrite(heaterPin, 120);
-          digitalWrite(heaterLedPin, heaterLedState);
+          digitalWrite(heaterLedPin, LOW);
+          break;
+          
+          case 1:
+          Serial.println("Heater low!");
+          analogWrite(heaterPin, 55);
+          digitalWrite(heaterLedPin, HIGH);
+          break;
+          
+          case 2:
+          Serial.println("Heater med!");
+          analogWrite(heaterPin, 110);
+          digitalWrite(heaterLedPin, HIGH);
+          break;
+          
+          case 3:
+          Serial.println("Heater hi!");
+          analogWrite(heaterPin, 220);
+          digitalWrite(heaterLedPin, HIGH);
+          break;
+          
+          default:
+          heaterMode = 0;
+          Serial.println("Heater off!");
+          
         }
       }
     }
   }
   lastLedButtonState = reading;
   lastHeaterButtonState = reading2;
-  //ledModeSwitch();
+}
+
+// Collar Control
+
+ISR(TIMER3_COMPA_vect) {
+  strip.setPixelColor(collarLed, Wheel(collarColor));
+  collarLed++;
+  if(collarLed >= 10) {
+    collarLed = 0;
+    collarColor = random(255);
+  }
 }
 
 void randomizeWorld() {
@@ -177,7 +219,7 @@ void ledModeSwitch() {
 }
 
 void colorWipe(uint32_t c, uint8_t wait) {
-  for(uint16_t i=0; i<strip.numPixels(); i++) {
+  for(uint16_t i=10; i<strip.numPixels(); i++) {
       strip.setPixelColor(i, c);
       strip.show();
       delay(wait);
@@ -190,7 +232,7 @@ void rainbowCycle(uint8_t wait) {
 
   for(j=0; j<256*5; j++) { // 5 cycles of all colors on wheel
     if(!ledModeInterrupted) {
-      for(i=0; i< strip.numPixels(); i++) {
+      for(i=10; i< strip.numPixels(); i++) {
         strip.setPixelColor(i, Wheel(((i * 256 / strip.numPixels()) + j) & 255));
       }
       strip.show();
@@ -210,17 +252,18 @@ void gameOfLifeLoop() {
   oldColor = newColor;
   // Fade out old generation
   for(i = 0; i<COLORCYCLEAMOUNT; i++) {
-    for (j = 0; j < SIZEX; j++) {
-      for (k = 0; k < SIZEY; k++) {
-        if (world[j][k][2] && !world[j][k][0]) {
-          setGridPixelColor(j, k, strip.Color(rgbOld[0] - (rgbOld[0] * i) / COLORCYCLEAMOUNT, rgbOld[1] - (rgbOld[1] * i) / COLORCYCLEAMOUNT, rgbOld[2] - (rgbOld[2] * i) / COLORCYCLEAMOUNT));
-        } else {
-          //setGridPixelColor(j, k, strip.Color(0, 0, 0));
+    if(!ledModeInterrupted) {
+      for (j = 0; j < SIZEX; j++) {
+        for (k = 0; k < SIZEY; k++) {
+          if (world[j][k][2] && !world[j][k][0]) {
+            setGridPixelColor(j, k, strip.Color(rgbOld[0] - (rgbOld[0] * i) / COLORCYCLEAMOUNT, rgbOld[1] - (rgbOld[1] * i) / COLORCYCLEAMOUNT, rgbOld[2] - (rgbOld[2] * i) / COLORCYCLEAMOUNT));
+          } else {
+            //setGridPixelColor(j, k, strip.Color(0, 0, 0));
+          }
         }
       }
     }
   }
-  Serial.println("Triple Loop 1 Done");
   // Display current generation
   for(i = 0; i<COLORCYCLEAMOUNT; i++) {
     if(!ledModeInterrupted) {
@@ -238,7 +281,6 @@ void gameOfLifeLoop() {
     }
   }
   delay(DELAY);
-  Serial.println("Triple Loop 2 Done");
   
   // Birth and death cycle
   for (int x = 0; x < SIZEX; x++) {
@@ -256,7 +298,7 @@ void gameOfLifeLoop() {
       }
     }
   }
-  Serial.println("Triple Loop 3 Done");
+
   int sameCells = 0;
   // Copy next generation into place
   for (int x = 0; x < SIZEX; x++) {
@@ -273,7 +315,6 @@ void gameOfLifeLoop() {
   if(sameCells == SIZEX * SIZEY) {
     randomizeWorld(); 
   }
-  Serial.println("Triple Loop 4 Done");
 }
  
 int neighbours(int x, int y) {
