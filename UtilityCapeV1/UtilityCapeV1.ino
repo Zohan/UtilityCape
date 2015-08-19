@@ -4,7 +4,7 @@
  In this case; 0 is present, 1 is future, 2+ is past.
 */
  
-#include <Adafruit_NeoPixel.h>
+#include "Adafruit_NeoPixel.h"
 #include <avr/interrupt.h>
 #include <avr/io.h>
 
@@ -12,7 +12,7 @@
 #define ALTERNATE_COLUMNS 1
 #define DELAY 0
 #define SIZEX 20
-#define SIZEY 7
+#define SIZEY 6
 #define OFFSET 10
 // This determines how 'smooth' transitions between worlds will be
 #define COLORCYCLEAMOUNT 16
@@ -46,7 +46,7 @@ long density = 22;
 //   NEO_GRB     Pixels are wired for GRB bitstream
 //   NEO_KHZ400  400 KHz bitstream (e.g. FLORA pixels)
 //   NEO_KHZ800  800 KHz bitstream (e.g. High Density LED strip)
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(150, 12, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel strip = Adafruit_NeoPixel(130, 12, NEO_GRB + NEO_KHZ800);
  
 void setup() {
   strip.begin();
@@ -161,6 +161,7 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
 // Collar Control
 
 ISR(TIMER3_COMPA_vect) {
+  Serial.println("Hello");
   strip.setPixelColor(collarLed, Wheel(collarColor));
   collarLed++;
   if(collarLed >= 10) {
@@ -178,16 +179,19 @@ void randomizeWorld() {
       else {
         world[i][j][0] = 0;
       }
+      // Uncomment for manual control
       //world[i][j][0] = 0;
       world[i][j][1] = 0;
     }
   }
-  world[1][5][0] = 1;
-  world[2][4][0] = 1;
-  world[2][5][0] = 1;
-  world[3][4][0] = 1;
-  world[3][5][0] = 1;
-  world[4][4][0] = 1;
+  
+  // Glider for calibration
+  /*world[1][3][0] = 1;
+  world[2][1][0] = 1;
+  world[2][3][0] = 1;
+  world[3][2][0] = 1;
+  world[3][3][0] = 1;*/
+
   oldColor = random(255);
 }
  
@@ -371,11 +375,12 @@ int neighbours(int x, int y) {
 // Convert the pixel coordinates into the actual pixel and display
 void setGridPixelColor(int x, int y, uint32_t c) {
   uint32_t pixel;
-  if(ALTERNATE_COLUMNS && x%2 == 1)
+  if(ALTERNATE_COLUMNS && y%2 == 1)
   {
-    pixel = (x*10) + (9-y);
+    pixel = (y*20) + x;
   } else {
-    pixel = (x*10) + y;
+    
+    pixel = (y*20) + (19-x);
   }
   if(x < SIZEX && y < SIZEY) {
     strip.setPixelColor(pixel + OFFSET, c);
