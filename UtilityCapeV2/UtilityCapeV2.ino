@@ -20,10 +20,10 @@
 #define COLORCYCLEAMOUNT 16
 
 #define LED_PIN 12
-const int ledButton = 9;    // the number of the pushbutton pin
-const int heatingButton = 10;    // the number of the pushbutton pin
-const int heaterPin = 6;    // the number of the pushbutton pin
-const int heaterLedPin = 7;
+const int ledButton = 4;    // the number of the pushbutton pin
+const int heatingButton = 19;    // the number of the pushbutton pin
+const int heaterPin = 10;    // the number of the pushbutton pin
+const int heaterLedPin = 13;
 int heaterLedState = LOW;         // the current state of the output pin
 int ledButtonState;             // the current reading from the input pin
 int heaterButtonState;             // the current reading from the input pin
@@ -54,7 +54,6 @@ Adafruit_NeoMatrix matrix = Adafruit_NeoMatrix(20, 6, LED_PIN,
   NEO_MATRIX_TOP     + NEO_MATRIX_RIGHT +
   NEO_MATRIX_ROWS + NEO_MATRIX_ZIGZAG,
   NEO_GRB            + NEO_KHZ800);
-Adafruit_NeoPixel strip = Adafruit_NeoPixel(130, LED_PIN, NEO_GRB + NEO_KHZ800);
  
 void setup() {
   matrix.begin();
@@ -62,9 +61,6 @@ void setup() {
   matrix.setBrightness(255);
   matrix.fillScreen(0);
   matrix.show();
-  
-  strip.begin();
-  strip.show(); // Initialize all pixels to 'off'
   randomSeed(analogRead(0));
   randomizeWorld();
   collarColor = random(255);
@@ -139,29 +135,20 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
         switch(heaterMode) {
           case 0:
           Serial.println("Heater off!");
+          analogWrite(heaterPin, 0);
           digitalWrite(heaterLedPin, LOW);
           break;
           
           case 1:
-          Serial.println("Heater low!");
-          analogWrite(heaterPin, 55);
-          digitalWrite(heaterLedPin, HIGH);
-          break;
-          
-          case 2:
-          Serial.println("Heater med!");
-          analogWrite(heaterPin, 110);
-          digitalWrite(heaterLedPin, HIGH);
-          break;
-          
-          case 3:
           Serial.println("Heater hi!");
-          analogWrite(heaterPin, 220);
+          analogWrite(heaterPin, 255);
           digitalWrite(heaterLedPin, HIGH);
           break;
           
           default:
           heaterMode = 0;
+          analogWrite(heaterPin, 0);
+          digitalWrite(heaterLedPin, LOW);
           Serial.println("Heater off!");
           
         }
@@ -175,8 +162,8 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
 // Collar Control
 
 ISR(TIMER3_COMPA_vect) {
-  strip.setPixelColor(collarLed, Wheel(collarColor));
-  strip.show();
+  matrix.drawCollarPixel(collarLed, Wheel(collarColor));
+  matrix.show();
   collarLed++;
   if(collarLed >= 10) {
     collarLed = 0;
@@ -194,7 +181,7 @@ void randomizeWorld() {
         world[i][j][0] = 0;
       }
       // Uncomment for manual control
-      world[i][j][0] = 0;
+      //world[i][j][0] = 0;
 
       
       world[i][j][1] = 0;
@@ -202,11 +189,11 @@ void randomizeWorld() {
   }
   
   // Glider for calibration
-  world[1][3][0] = 1;
+  /*world[1][3][0] = 1;
   world[2][1][0] = 1;
   world[2][3][0] = 1;
   world[3][2][0] = 1;
-  world[3][3][0] = 1;
+  world[3][3][0] = 1;*/
 
   oldColor = random(255);
 }
@@ -228,7 +215,9 @@ void ledModeSwitch() {
     break;
     
     case 1:
-    rainbowCycle(10);
+    rainbowCycle(100);
+    //colorWipe(Wheel(85), 5); // Green
+    //colorWipe(Wheel(128), 5); // Green
     break;
     
     case 2:
@@ -239,7 +228,20 @@ void ledModeSwitch() {
     matrix.fillScreen(0);
     matrix.setCursor(x, 0);
     matrix.print(F("BAG OF DICKS"));
-    if(--x < -75) {
+    if(--x < -70) {
+      x = matrix.width();
+      if(++pass >= 3) pass = 0;
+      matrix.setTextColor(colors[pass]);
+    }
+    matrix.show();
+    delay(100);
+    break;
+
+    case 4:
+    matrix.fillScreen(0);
+    matrix.setCursor(x, 0);
+    matrix.print(F("FUCK YOUR BURN"));
+    if(--x < -80) {
       x = matrix.width();
       if(++pass >= 3) pass = 0;
       matrix.setTextColor(colors[pass]);
@@ -257,7 +259,7 @@ void ledModeSwitch() {
 
 void colorWipe(uint32_t c, uint8_t wait) {
   for(uint16_t i=0; i<matrix.numPixels(); i++) {
-      matrix.drawPixel(i, i/10, c);
+      matrix.drawPixel(i%SIZEX, i/SIZEX, c);
       matrix.show();
       delay(wait);
   }
@@ -270,7 +272,7 @@ void rainbowCycle(uint8_t wait) {
   for(j=0; j<256*5; j++) { // 5 cycles of all colors on wheel
     if(!ledModeInterrupted) {
       for(i=0; i< matrix.numPixels(); i++) {
-        matrix.drawPixel(i, i/10, Wheel(((i * 256 / strip.numPixels()) + j) & 255));
+        matrix.drawPixel(i%SIZEX, i/SIZEX, Wheel(((i * 256 / matrix.numPixels()) + j) & 255));
       }
       matrix.show();
       delay(wait);
@@ -280,8 +282,6 @@ void rainbowCycle(uint8_t wait) {
 
 void gameOfLifeLoop() {
     // Some example procedures showing how to display to the pixels:
-  //colorWipe(strip.Color(255, 0, 0), 50); // Red
-  //colorWipe(strip.Color(0, 255, 0), 50); // Green
   uint16_t i, j, k;
   byte newColor = oldColor + 4;
   LifeWheel(oldColor & 255, rgbOld);
@@ -295,7 +295,7 @@ void gameOfLifeLoop() {
           if (world[j][k][2] && !world[j][k][0]) {
             setGridPixelColor(j, k, matrix.Color(rgbOld[0] - (rgbOld[0] * i) / COLORCYCLEAMOUNT, rgbOld[1] - (rgbOld[1] * i) / COLORCYCLEAMOUNT, rgbOld[2] - (rgbOld[2] * i) / COLORCYCLEAMOUNT));
           } else {
-            //setGridPixelColor(j, k, strip.Color(0, 0, 0));
+
           }
         }
       }

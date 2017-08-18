@@ -72,6 +72,10 @@ uint16_t Adafruit_NeoMatrix::Color(uint8_t r, uint8_t g, uint8_t b) {
                     (b         >> 3);
 }
 
+void Adafruit_NeoMatrix::drawCollarPixel(int16_t x, uint16_t color) {
+  setPixelColor(x, expandColor(color));
+}
+
 void Adafruit_NeoMatrix::drawPixel(int16_t x, int16_t y, uint16_t color) {
 
   if((x < 0) || (y < 0) || (x >= _width) || (y >= _height)) return;
