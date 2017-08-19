@@ -4,18 +4,18 @@
  In this case; 0 is present, 1 is future, 2+ is past.
 */
  
-#include "Adafruit_NeoPixel.h"
-#include "Adafruit_GFX.h"
-#include "Adafruit_NeoMatrix.h"
+#include <Adafruit_NeoPixel.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_NeoMatrix.h>
 #include <avr/interrupt.h>
 #include <avr/io.h>
 
 // Columns were alternated between running up the cape and down the cape for wiring purposes. With this on, every other row will have the output flipped.
-#define ALTERNATE_COLUMNS 1
 #define DELAY 0
 #define SIZEX 20
 #define SIZEY 6
-#define OFFSET 10
+#define COLLAR_OFFSET 10
+#define MATRIX_DIMENSIONS SIZEX*SIZEY
 // This determines how 'smooth' transitions between worlds will be
 #define COLORCYCLEAMOUNT 16
 
@@ -32,9 +32,9 @@ int lastHeaterButtonState = LOW;   // the previous reading from the input pin
 long lastDebounceTime = 0;  // the last time the output pin was toggled
 long debounceDelay = 50;    // the debounce time; increase if the output flickers
 
-byte ledMode = 0;
+byte ledMode = 3;
 byte heaterMode = 0;
-byte collarLed = 0;
+byte collarLed = 10;
 byte collarColor = 0;
 
 byte world[SIZEX][SIZEY][3], oldColor, rgbOld[3], rgbNew[3];
@@ -49,8 +49,8 @@ long density = 22;
 //   NEO_GRB     Pixels are wired for GRB bitstream
 //   NEO_KHZ400  400 KHz bitstream (e.g. FLORA pixels)
 //   NEO_KHZ800  800 KHz bitstream (e.g. High Density LED strip)
-
-Adafruit_NeoMatrix matrix = Adafruit_NeoMatrix(20, 6, LED_PIN,
+// We claim the strip is 10 larger than it is.
+Adafruit_NeoMatrix matrix = Adafruit_NeoMatrix(20, 7, LED_PIN,
   NEO_MATRIX_TOP     + NEO_MATRIX_RIGHT +
   NEO_MATRIX_ROWS + NEO_MATRIX_ZIGZAG,
   NEO_GRB            + NEO_KHZ800);
@@ -60,7 +60,9 @@ void setup() {
   matrix.setTextWrap(false);
   matrix.setBrightness(255);
   matrix.fillScreen(0);
+  //matrix.setFont(&Capefont);
   matrix.show();
+  matrix.setRemapFunction(myRemapFn);
   randomSeed(analogRead(0));
   randomizeWorld();
   collarColor = random(255);
@@ -97,6 +99,19 @@ void setup() {
   TCCR1B |= (1 << CS12);    // 256 prescaler 
   TIMSK1 |= (1 << OCIE1A);  // enable timer compare interrupt
   interrupts();             // enable all interrupts
+}
+
+uint16_t myRemapFn(uint16_t x, uint16_t y) {
+  uint16_t newCoords;
+  uint16_t mWidth = matrix.width();
+  if(y == 6){
+    return x-10;
+  } else if(y%2 == 0) {
+    newCoords = mWidth*y + ((mWidth-1) - x + COLLAR_OFFSET);
+  } else {
+    newCoords = mWidth*y + (x+COLLAR_OFFSET);
+  }
+  return newCoords;
 }
 
 ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
@@ -160,15 +175,15 @@ ISR(TIMER1_COMPA_vect)          // timer compare interrupt service routine
 }
 
 // Collar Control
-
 ISR(TIMER3_COMPA_vect) {
-  //matrix.drawCollarPixel(collarLed, Wheel(collarColor));
-  //matrix.show();
+  cli();
+  matrix.drawPixel(collarLed, 6, Wheel(collarColor));
   collarLed++;
-  if(collarLed >= 10) {
-    collarLed = 0;
+  if(collarLed >= 20) {
+    collarLed = 10;
     collarColor = random(255);
   }
+  sei();
 }
 
 void randomizeWorld() {
@@ -226,7 +241,7 @@ void ledModeSwitch() {
 
     case 3:
     matrix.fillScreen(0);
-    matrix.setCursor(x, 0);
+    matrix.setCursor(x, -1);
     matrix.print(F("BAG OF DICKS"));
     if(--x < -70) {
       x = matrix.width();
@@ -259,7 +274,8 @@ void ledModeSwitch() {
 }
 
 void colorWipe(uint32_t c, uint8_t wait) {
-  for(uint16_t i=0; i<matrix.numPixels(); i++) {
+  
+  for(uint16_t i=0; i<MATRIX_DIMENSIONS; i++) {
       matrix.drawPixel(i%SIZEX, i/SIZEX, c);
       matrix.show();
       delay(wait);
@@ -269,10 +285,9 @@ void colorWipe(uint32_t c, uint8_t wait) {
 // Slightly different, this makes the rainbow equally distributed throughout
 void rainbowCycle(uint8_t wait) {
   uint16_t i, j;
-
   for(j=0; j<256*5; j++) { // 5 cycles of all colors on wheel
     if(!ledModeInterrupted) {
-      for(i=0; i< matrix.numPixels(); i++) {
+      for(i=0; i< MATRIX_DIMENSIONS; i++) {
         matrix.drawPixel(i%SIZEX, i/SIZEX, Wheel(((i * 256 / matrix.numPixels()) + j) & 255));
       }
       matrix.show();
