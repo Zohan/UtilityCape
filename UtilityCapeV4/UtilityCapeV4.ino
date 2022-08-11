@@ -8,6 +8,7 @@
 #include <Adafruit_NeoMatrix.h>
 #include <avr/interrupt.h>
 #include "Adafruit_ZeroTimer.h"
+#include <FastLED.h>
 
 // Columns were alternated between running up the cape and down the cape for wiring purposes. With this on, every other row will have the output flipped.
 #define DELAY 0
@@ -32,7 +33,7 @@ int lastHeaterButtonState = 0;   // the previous reading from the input pin
 long lastDebounceTime = 0;  // the last time the output pin was toggled
 long debounceDelay = 32;    // the debounce time; increase if the output flickers
 
-byte ledMode = 3;
+byte ledMode = 1;
 byte heaterMode = 0;
 byte collarLed = 10;
 byte collarColor = 0;
@@ -41,6 +42,10 @@ byte world[SIZEX][SIZEY][3], oldColor, rgbOld[3], rgbNew[3];
 boolean firstCycle = true;
 boolean ledModeInterrupted = false;
 long density = 22;
+
+// Fire palette
+CRGBPalette16 gPal;
+bool gReverseDirection = true;
  
 // Parameter 1 = number of pixels in strip
 // Parameter 2 = pin number (most are valid)
@@ -72,6 +77,8 @@ Adafruit_ZeroTimer zerotimer = Adafruit_ZeroTimer(3);
 void TC3_Handler() {
   Adafruit_ZeroTimer::timerHandler(3);
 }
+
+volatile int freq_count = 0;
 void TimerCallback0(void)
 {
   int reading = CircuitPlayground.leftButton();
@@ -128,6 +135,15 @@ void TimerCallback0(void)
   }
   lastLedButtonState = reading;
   lastHeaterButtonState = reading2;
+
+  if (freq_count < 100){
+    freq_count += 1;
+  } else {
+    freq_count = 0;
+    collarCounter();
+  }
+  
+  
 }
 
 void setupTimer() {
@@ -181,7 +197,7 @@ void setupTimer() {
   zerotimer.enable(true);
   
 }
- 
+
 void setup() {
   matrix.begin();
   matrix.setTextWrap(false);
@@ -193,6 +209,8 @@ void setup() {
   randomSeed(analogRead(0));
   randomizeWorld();
   collarColor = random(255);
+
+  gPal = HeatColors_p;
   
   // Define buttons
   pinMode(ledButton, INPUT);
@@ -213,7 +231,7 @@ uint16_t myRemapFn(uint16_t x, uint16_t y) {
   uint16_t newCoords;
   uint16_t mLength = SIZEY;
   if(y > SIZEY){
-    return x + y-SIZEY;
+    return (2*x) + y-SIZEY;
   } else if(x%2 == 1) {
     newCoords = mLength*x + ((mLength-1) - y + COLLAR_OFFSET);
   } else {
@@ -300,6 +318,10 @@ void ledModeSwitch() {
     }
     matrix.show();
     delay(100);
+    break;
+
+    case 5:
+    Fire2012WithPalette();
     break;
     
     default:
@@ -494,4 +516,77 @@ uint32_t Wheel(byte WheelPos) {
    WheelPos -= 170;
    return matrix.Color(0, WheelPos * 3, 255 - WheelPos * 3);
   }
+}
+
+
+// COOLING: How much does the air cool as it rises?
+// Less cooling = taller flames.  More cooling = shorter flames.
+// Default 55, suggested range 20-100 
+int COOLING = 40;
+
+// SPARKING: What chance (out of 255) is there that a new spark will be lit?
+// Higher chance = more roaring fire.  Lower chance = more flickery fire.
+// Default 120, suggested range 50-200.
+int SPARKING = 40;
+
+#define NUM_LEDS SIZEY
+
+#define NUM_STRIPS 10
+#define STRIP_INCREMENT 1
+
+#define SAMPLE_WINDOW   10  // Sample window for average level
+#define INPUT_FLOOR     56  // Lower range of mic sensitivity in dB SPL
+#define INPUT_CEILING  110  // Upper range of mic sensitivity in db SPL
+
+void Fire2012WithPalette()
+{
+// Array of temperature readings at each simulation cell
+  static byte heat[NUM_LEDS];
+  float peakToPeak = 0;   // peak-to-peak level
+  //get peak sound pressure level over the sample window
+  peakToPeak = CircuitPlayground.mic.soundPressureLevel(SAMPLE_WINDOW);
+
+  //limit to the floor value
+  peakToPeak = max(INPUT_FLOOR, peakToPeak);
+  Serial.println(peakToPeak);
+
+
+  SPARKING = (peakToPeak - 50)*2;
+  COOLING = 125 - (peakToPeak);
+
+  for (int x_strip = 0; x_strip < NUM_STRIPS; x_strip = x_strip + STRIP_INCREMENT) {
+    random16_add_entropy( random());
+  // Step 1.  Cool down every cell a little
+    for( int i = 0; i < NUM_LEDS; i++) {
+      heat[i] = qsub8( heat[i],  random8(0, ((COOLING * 10) / NUM_LEDS) + 2));
+    }
+  
+    // Step 2.  Heat from each cell drifts 'up' and diffuses a little
+    for( int k= NUM_LEDS - 1; k >= 2; k--) {
+      heat[k] = (heat[k - 1] + heat[k - 2] + heat[k - 2] ) / 3;
+    }
+    
+    // Step 3.  Randomly ignite new 'sparks' of heat near the bottom
+    if( random8() < SPARKING ) {
+      int y = random8(7);
+      heat[y] = qadd8( heat[y], random8(160,255) );
+    }
+
+    // Step 4.  Map from heat cells to LED colors
+    for( int j = 0; j < NUM_LEDS; j++) {
+      // Scale the heat value from 0-255 down to 0-240
+      // for best results with color palettes.
+      byte colorindex = scale8( heat[j], 240);
+      CRGB color = ColorFromPalette( gPal, colorindex);
+      int pixelnumber;
+      if( gReverseDirection ) {
+        pixelnumber = (NUM_LEDS-1) - j;
+      } else {
+        pixelnumber = j;
+      }
+      matrix.drawPixel(x_strip, pixelnumber, matrix.Color(color.red, color.green, color.blue));
+    } 
+  }
+  matrix.show();
+  delay(32);
 }
