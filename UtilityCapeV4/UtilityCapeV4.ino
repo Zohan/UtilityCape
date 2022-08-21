@@ -35,7 +35,7 @@ long debounceDelay = 32;    // the debounce time; increase if the output flicker
 
 int ledMode = 4;
 byte heaterMode = 0;
-byte collarLed = 10;
+byte collarLed = 20;
 byte collarColor = 0;
 
 byte world[SIZEX][SIZEY][3], oldColor, rgbOld[3], rgbNew[3];
@@ -70,19 +70,26 @@ Adafruit_NeoMatrix matrix = Adafruit_NeoMatrix(SIZEX, SIZEY+COLLAR_OFFSET/SIZEX,
 
 void collarCounter(){
   noInterrupts();
-  matrix.drawPixel(0, 43, Wheel(collarColor));
+  int collarX = collarLed/2;
+  int collarY = collarLed%2;
+//    Serial.print("x:");
+//    Serial.print(collarX);
+//    Serial.print(" y:");
+//    Serial.println(collarY);
+  matrix.drawPixel(collarX, 42+collarY, Wheel(collarColor));
   collarLed++;
-  if(collarLed >= 20) {
-    collarLed = 10;
+  if(collarLed >= COLLAR_OFFSET) {
+    collarLed = 0;
     collarColor = random(255);
   }
+  matrix.show();
   interrupts();
 }
 
 // timer
-Adafruit_ZeroTimer zerotimer = Adafruit_ZeroTimer(3);
-void TC3_Handler() {
-  Adafruit_ZeroTimer::timerHandler(3);
+Adafruit_ZeroTimer zerotimer = Adafruit_ZeroTimer(4);
+void TC4_Handler() {
+  Adafruit_ZeroTimer::timerHandler(4);
 }
 
 volatile int freq_count = 0;
@@ -147,7 +154,7 @@ void TimerCallback0(void)
     freq_count += 1;
   } else {
     freq_count = 0;
-//    collarCounter();
+    collarCounter();
     Serial.println("Tick");
   }
   
@@ -236,7 +243,12 @@ void setup() {
 uint16_t myRemapFn(uint16_t x, uint16_t y) {
   uint16_t newCoords;
   uint16_t mLength = SIZEY;
-  if(y > SIZEY){
+  if(y >= SIZEY){
+//    Serial.print("x:");
+//    Serial.print(x);
+//    Serial.print(" y:");
+//    Serial.println(y);
+//    Serial.println(SIZEY+COLLAR_OFFSET/SIZEX);
     return (2*x) + y-SIZEY;
   } else if(x%2 == 1) {
     newCoords = mLength*x + ((mLength-1) - y + COLLAR_OFFSET);
@@ -296,7 +308,7 @@ void ledModeSwitch() {
     break;
     
     case 2:
-    colorWipe(matrix.Color(0, 0, 0), 5); // Green
+    colorWipe(matrix.Color(0, 0, 0), 1); // Green
     break;
 
     case 3:
