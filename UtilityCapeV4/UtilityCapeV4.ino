@@ -17,13 +17,13 @@
 #define COLLAR_OFFSET 20
 #define MATRIX_DIMENSIONS SIZEX*SIZEY
 // This determines how 'smooth' transitions between worlds will be
-#define COLORCYCLEAMOUNT 16
+#define COLORCYCLEAMOUNT 4
 
 #define LED_PIN A1
 const int freq = 100;
 const int ledButton = 4;    // the number of the pushbutton pin
 const int heatingButton = 19;    // the number of the pushbutton pin
-const int heaterPin = A4;    // the number of the pushbutton pin
+const int heaterPin = SCL;    // the number of the pushbutton pin
 const int heaterLedPin = 13;
 int heaterLedState = LOW;         // the current state of the output pin
 int ledButtonState;             // the current reading from the input pin
@@ -33,7 +33,7 @@ int lastHeaterButtonState = 0;   // the previous reading from the input pin
 long lastDebounceTime = 0;  // the last time the output pin was toggled
 long debounceDelay = 32;    // the debounce time; increase if the output flickers
 
-byte ledMode = 1;
+int ledMode = 4;
 byte heaterMode = 0;
 byte collarLed = 10;
 byte collarColor = 0;
@@ -44,6 +44,13 @@ boolean ledModeInterrupted = false;
 long density = 22;
 
 // Fire palette
+const TProgmemRGBPalette16 InverseHeatColors_p FL_PROGMEM =
+{
+    0x000000,
+    0x000033, 0x000066, 0x000099, 0x0000CC, 0x0000FF,
+    0x0033FF, 0x0066FF, 0x0099FF, 0x00CCFF, 0x00FFFF,
+    0x33FFFF, 0x66FFFF, 0x99FFFF, 0xCCFFFF, 0xFFFFFF
+};
 CRGBPalette16 gPal;
 bool gReverseDirection = true;
  
@@ -136,11 +143,12 @@ void TimerCallback0(void)
   lastLedButtonState = reading;
   lastHeaterButtonState = reading2;
 
-  if (freq_count < 100){
+  if (freq_count <= freq-22){
     freq_count += 1;
   } else {
     freq_count = 0;
-    collarCounter();
+//    collarCounter();
+    Serial.println("Tick");
   }
   
   
@@ -210,8 +218,6 @@ void setup() {
   randomizeWorld();
   collarColor = random(255);
 
-  gPal = HeatColors_p;
-  
   // Define buttons
   pinMode(ledButton, INPUT);
   pinMode(heatingButton, INPUT);
@@ -294,33 +300,16 @@ void ledModeSwitch() {
     break;
 
     case 3:
-    matrix.fillScreen(0);
-    matrix.setCursor(x, -1);
-    matrix.print(F("BAG OF DICKS"));
-    if(--x < -70) {
-      x = matrix.width();
-      if(++pass >= 3) pass = 0;
-      matrix.setTextColor(colors[pass]);
-    }
-    matrix.show();
-    
-    delay(100);
+    theaterChaseRainbow(50);
     break;
 
     case 4:
-    matrix.fillScreen(0);
-    matrix.setCursor(x, 0);
-    matrix.print(F("FUCK YOUR BURN"));
-    if(--x < -80) {
-      x = matrix.width();
-      if(++pass >= 3) pass = 0;
-      matrix.setTextColor(colors[pass]);
-    }
-    matrix.show();
-    delay(100);
+    gPal = HeatColors_p;
+    Fire2012WithPalette();
     break;
 
     case 5:
+    gPal = InverseHeatColors_p;
     Fire2012WithPalette();
     break;
     
@@ -519,6 +508,27 @@ uint32_t Wheel(byte WheelPos) {
 }
 
 
+//Theatre-style crawling lights with rainbow effect
+void theaterChaseRainbow(uint8_t wait) {
+  for (int j=0; j < 256; j++) {     // cycle all 256 colors in the wheel
+    if (!ledModeInterrupted) {
+      for (int q=0; q < 3; q++) {
+        for(uint16_t i=0; i < MATRIX_DIMENSIONS; i=i+4) {
+            matrix.drawPixel(i/SIZEY, i%SIZEY+q, Wheel( (i+j) % 255));
+        }
+        matrix.show();
+        delay(wait);
+  
+        for(uint16_t i=0; i < MATRIX_DIMENSIONS; i=i+4) {
+            matrix.drawPixel(i/SIZEY, i%SIZEY+q, 0);
+        }
+      }
+      
+    }
+  }
+}
+
+
 // COOLING: How much does the air cool as it rises?
 // Less cooling = taller flames.  More cooling = shorter flames.
 // Default 55, suggested range 20-100 
@@ -550,9 +560,19 @@ void Fire2012WithPalette()
   peakToPeak = max(INPUT_FLOOR, peakToPeak);
   Serial.println(peakToPeak);
 
+  if (ledMode == 5) {
+    SPARKING = (peakToPeak - 30)*2;
+    COOLING = 115 - (peakToPeak);
+    Serial.print("Sparking :");
+    Serial.println(SPARKING);
+    Serial.print("Cooling :");
+    Serial.println(COOLING);
+  } else {
+    SPARKING = (peakToPeak - 50)*2;
+    COOLING = 125 - (peakToPeak);
+  }
 
-  SPARKING = (peakToPeak - 50)*2;
-  COOLING = 125 - (peakToPeak);
+  
 
   for (int x_strip = 0; x_strip < NUM_STRIPS; x_strip = x_strip + STRIP_INCREMENT) {
     random16_add_entropy( random());
