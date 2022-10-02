@@ -33,7 +33,7 @@ int lastHeaterButtonState = 0;   // the previous reading from the input pin
 long lastDebounceTime = 0;  // the last time the output pin was toggled
 long debounceDelay = 32;    // the debounce time; increase if the output flickers
 
-int ledMode = 4;
+int ledMode = 1;
 byte heaterMode = 0;
 byte collarLed = 20;
 byte collarColor = 0;
@@ -298,36 +298,33 @@ void ledModeSwitch() {
   Serial.println(ledMode);
   switch(ledMode) {
     case 0:
-    gameOfLifeLoop();
+    colorWipe(matrix.Color(0, 0, 0), 1); // Green
     break;
     
     case 1:
-    rainbowCycle(100);
-    //colorWipe(Wheel(85), 5); // Green
-    //colorWipe(Wheel(128), 5); // Green
-    break;
-    
-    case 2:
-    colorWipe(matrix.Color(0, 0, 0), 1); // Green
-    break;
-
-    case 3:
     theaterChaseRainbow(50);
     break;
 
-    case 4:
+    case 2:
+    gameOfLifeLoop();
+    break;
+
+    case 3:
     gPal = HeatColors_p;
     Fire2012WithPalette();
     break;
 
-    case 5:
+    case 4:
     gPal = InverseHeatColors_p;
     Fire2012WithPalette();
+    break;
+
+    case 5:
+    rainbowCycle(100);
     break;
     
     default:
     ledMode = 0;
-    gameOfLifeLoop();
   }
   ledModeInterrupted = false;
 }
